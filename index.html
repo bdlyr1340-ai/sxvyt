@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AR Drawing Pro - Video Record</title>
+    <title>AR Drawing Pro - Camera Only Record</title>
     <style>
         :root {
             --primary: #00ff88;
@@ -14,7 +14,6 @@
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
         body { background-color: #111; overflow: hidden; width: 100vw; height: 100vh; color: white; }
 
-        /* شاشة طلب الصلاحية للكاميرا */
         #permission-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 100; display: flex; flex-direction: column;
@@ -31,7 +30,6 @@
 
         #camera-feed { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
 
-        /* حاوية الصورة لتسمح بالتحريك */
         #image-container {
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%) scale(1);
@@ -45,7 +43,6 @@
 
         #drawing-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; touch-action: none; }
 
-        /* الواجهة الزجاجية */
         #ui-panel {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
             width: 95%; max-width: 450px; background: var(--bg-glass); backdrop-filter: blur(15px);
@@ -73,7 +70,6 @@
         .btn:active { background: rgba(255,255,255,0.3); transform: scale(0.95); }
         .btn.active-toggle { background: var(--primary); color: #000; border-color: var(--primary); }
         
-        /* تأثير الوميض للتسجيل */
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
         .recording span { color: #ff4d4d !important; animation: blink 1.2s infinite; }
 
@@ -93,7 +89,6 @@
         input[type="color"] { -webkit-appearance: none; border: none; width: 35px; height: 35px; border-radius: 50%; background: transparent; }
         input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
         input[type="color"]::-webkit-color-swatch { border: 2px solid white; border-radius: 50%; }
-
     </style>
 </head>
 <body>
@@ -115,7 +110,6 @@
     <div id="toggle-ui" style="display: none;">⚙️</div>
 
     <div id="ui-panel" class="hidden">
-        
         <div class="row">
             <label for="image-upload" class="btn"><span>📁</span><span>صورة</span></label>
             <input type="file" id="image-upload" accept="image/*">
@@ -147,7 +141,6 @@
     </div>
 
     <script>
-        // --- 1. إعدادات الكاميرا واللوحة ---
         const startCameraBtn = document.getElementById('start-camera-btn');
         const overlay = document.getElementById('permission-overlay');
         const video = document.getElementById('camera-feed');
@@ -175,7 +168,6 @@
         }
         window.addEventListener('resize', resizeCanvas);
 
-        // --- 2. نظام الرسم ---
         let isDrawing = false, lastX = 0, lastY = 0, paths = [], currentPath = [];
         const colorPicker = document.getElementById('color-picker');
         const brushSize = document.getElementById('brush-size');
@@ -209,7 +201,6 @@
         });
         document.getElementById('clear-btn').addEventListener('click', () => { paths = []; ctx.clearRect(0, 0, canvas.width, canvas.height); });
 
-        // --- 3. التحكم بالصورة ---
         const imageUpload = document.getElementById('image-upload');
         const imgContainer = document.getElementById('image-container');
         const traceImage = document.getElementById('trace-image');
@@ -254,13 +245,13 @@
             else { imgContainer.classList.remove('locked'); lockBtn.classList.remove('active-toggle'); lockBtn.innerHTML = '<span>🔓</span><span>قفل</span>'; }
         });
 
-        // --- 4. تسجيل الفيديو (Screen Recording) ---
+        // --- كود تسجيل الفيديو المعدل (بدون الصورة الشفافة) ---
         const recordBtn = document.getElementById('record-btn');
         let mediaRecorder;
         let recordedChunks = [];
         let isRecording = false;
         let recordAnimationId;
-        const recordCanvas = document.createElement('canvas'); // لوحة خفية لدمج الطبقات
+        const recordCanvas = document.createElement('canvas');
 
         function recordFrame() {
             if(!isRecording) return;
@@ -268,7 +259,7 @@
             recordCanvas.width = canvas.width;
             recordCanvas.height = canvas.height;
 
-            // 1. رسم فيديو الكاميرا
+            // 1. رسم فيديو الكاميرا فقط
             const vRatio = video.videoWidth / video.videoHeight;
             const cRatio = recordCanvas.width / recordCanvas.height;
             let drawWidth, drawHeight, sX, sY;
@@ -281,37 +272,22 @@
             }
             rCtx.drawImage(video, sX, sY, drawWidth, drawHeight);
 
-            // 2. رسم الصورة المرفوعة بشفافيتها وحجمها
-            if(imgContainer.style.display === 'block' && traceImage.src) {
-                rCtx.save();
-                rCtx.translate(recordCanvas.width/2 + translateX, recordCanvas.height/2 + translateY);
-                rCtx.scale(currentScale, currentScale);
-                rCtx.globalAlpha = opacitySlider.value;
-                const imgW = traceImage.clientWidth;
-                const imgH = traceImage.clientHeight;
-                rCtx.drawImage(traceImage, -imgW/2, -imgH/2, imgW, imgH);
-                rCtx.restore();
-            }
+            // تم إزالة كود رسم الصورة الشفافة من هنا! 
+            // الصورة ستظهر على الشاشة فقط ولن تسجل في الفيديو.
 
-            // 3. رسم الخطوط التي قمت برسمها
+            // 2. رسم خطوط الرسم فوق الكاميرا
             rCtx.drawImage(canvas, 0, 0);
 
-            // طلب الإطار التالي
             recordAnimationId = requestAnimationFrame(recordFrame);
         }
 
         recordBtn.addEventListener('click', () => {
             if(!isRecording) {
-                // بدء التسجيل
                 recordedChunks = [];
-                const stream = recordCanvas.captureStream(30); // 30 إطار في الثانية
+                const stream = recordCanvas.captureStream(30);
                 
-                try {
-                    mediaRecorder = new MediaRecorder(stream);
-                } catch(e) {
-                    alert('متصفحك لا يدعم تسجيل الفيديو.');
-                    return;
-                }
+                try { mediaRecorder = new MediaRecorder(stream); } 
+                catch(e) { alert('متصفحك لا يدعم تسجيل الفيديو.'); return; }
 
                 mediaRecorder.ondataavailable = e => { if(e.data.size > 0) recordedChunks.push(e.data); };
                 mediaRecorder.onstop = () => {
@@ -319,7 +295,7 @@
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = 'AR-Drawing-Video.webm';
+                    a.download = 'AR-Magic-Drawing.webm';
                     a.click();
                     URL.revokeObjectURL(url);
                 };
@@ -328,7 +304,6 @@
                 recordBtn.classList.add('recording');
                 recordBtn.innerHTML = '<span>⏹️</span><span>إيقاف</span>';
                 
-                // إخفاء الواجهة تلقائياً ليكون الفيديو نظيفاً
                 uiPanel.classList.add('hidden');
                 toggleUIBtn.innerText = '⬆';
                 uiVisible = false;
@@ -336,7 +311,6 @@
                 recordFrame();
                 mediaRecorder.start();
             } else {
-                // إيقاف التسجيل
                 isRecording = false;
                 mediaRecorder.stop();
                 cancelAnimationFrame(recordAnimationId);
@@ -345,7 +319,6 @@
             }
         });
 
-        // --- 5. حفظ وحركات الواجهة ---
         document.getElementById('save-btn').addEventListener('click', () => {
             const link = document.createElement('a'); link.download = 'My-AR-Drawing.png'; link.href = canvas.toDataURL(); link.click();
         });
