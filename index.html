@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AR Drawing Pro - Video Record</title>
+    <style>
+        :root {
+            --primary: #00ff88;
+            --bg-glass: rgba(20, 20, 20, 0.7);
+            --border-glass: rgba(255, 255, 255, 0.2);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background-color: #111; overflow: hidden; width: 100vw; height: 100vh; color: white; }
+
+        /* شاشة طلب الصلاحية للكاميرا */
+        #permission-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 100; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; text-align: center; padding: 20px;
+        }
+        #permission-overlay h2 { margin-bottom: 15px; color: var(--primary); }
+        #permission-overlay p { margin-bottom: 30px; font-size: 14px; color: #ccc; max-width: 400px; line-height: 1.6; }
+        #start-camera-btn {
+            background: var(--primary); color: #000; font-size: 18px; font-weight: bold;
+            padding: 15px 40px; border: none; border-radius: 30px; cursor: pointer;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4); transition: transform 0.2s;
+        }
+        #start-camera-btn:active { transform: scale(0.95); }
+
+        #camera-feed { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+
+        /* حاوية الصورة لتسمح بالتحريك */
+        #image-container {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(1);
+            z-index: 2; display: none; touch-action: none; cursor: grab;
+            border: 2px dashed rgba(255,255,255,0.5); border-radius: 10px;
+            padding: 5px; background: rgba(0,0,0,0.2);
+        }
+        #image-container.locked { border: none; pointer-events: none; background: transparent; }
+        
+        #trace-image { max-width: 85vw; max-height: 85vh; opacity: 0.5; pointer-events: none; display: block; }
+
+        #drawing-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; touch-action: none; }
+
+        /* الواجهة الزجاجية */
+        #ui-panel {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            width: 95%; max-width: 450px; background: var(--bg-glass); backdrop-filter: blur(15px);
+            border: 1px solid var(--border-glass); border-radius: 20px; padding: 15px; z-index: 10;
+            display: flex; flex-direction: column; gap: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            transition: all 0.3s ease-in-out;
+        }
+        #ui-panel.hidden { bottom: -250px; opacity: 0; pointer-events: none; }
+
+        #toggle-ui {
+            position: absolute; bottom: 20px; right: 20px; background: var(--bg-glass);
+            border: 1px solid var(--border-glass); color: white; border-radius: 50%;
+            width: 50px; height: 50px; display: flex; justify-content: center; align-items: center;
+            cursor: pointer; z-index: 11; font-size: 24px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white; padding: 10px 5px; border-radius: 10px; cursor: pointer;
+            flex: 1; text-align: center; font-weight: bold; font-size: 13px; transition: 0.2s;
+            display: flex; flex-direction: column; align-items: center; gap: 4px; justify-content: center;
+        }
+        .btn:active { background: rgba(255,255,255,0.3); transform: scale(0.95); }
+        .btn.active-toggle { background: var(--primary); color: #000; border-color: var(--primary); }
+        
+        /* تأثير الوميض للتسجيل */
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        .recording span { color: #ff4d4d !important; animation: blink 1.2s infinite; }
+
+        input[type="file"] { display: none; }
+
+        .slider-group { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: bold; }
+        .slider-group span { min-width: 55px; }
+        
+        input[type="range"] {
+            flex: 1; -webkit-appearance: none; height: 6px; background: rgba(255,255,255,0.3);
+            border-radius: 5px; outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 20px; height: 20px; background: var(--primary);
+            border-radius: 50%; cursor: pointer; box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        input[type="color"] { -webkit-appearance: none; border: none; width: 35px; height: 35px; border-radius: 50%; background: transparent; }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: 2px solid white; border-radius: 50%; }
+
+    </style>
+</head>
+<body>
+
+    <div id="permission-overlay">
+        <h2>مرحباً بك في AR Drawing</h2>
+        <p>لبدء الرسم والتتبع وتسجيل الفيديو، يحتاج التطبيق إلى صلاحية الوصول لكاميرا الهاتف.</p>
+        <button id="start-camera-btn">📷 تشغيل الكاميرا</button>
+    </div>
+
+    <video id="camera-feed" autoplay playsinline muted></video>
+
+    <div id="image-container">
+        <img id="trace-image" alt="صورة التتبع">
+    </div>
+
+    <canvas id="drawing-canvas"></canvas>
+
+    <div id="toggle-ui" style="display: none;">⚙️</div>
+
+    <div id="ui-panel" class="hidden">
+        
+        <div class="row">
+            <label for="image-upload" class="btn"><span>📁</span><span>صورة</span></label>
+            <input type="file" id="image-upload" accept="image/*">
+            <div class="btn" id="lock-btn"><span>🔓</span><span>قفل</span></div>
+            <div class="btn" id="undo-btn"><span>↩️</span><span>تراجع</span></div>
+        </div>
+
+        <div class="row">
+            <div class="btn" id="clear-btn" style="color: #ff4d4d;"><span>🗑️</span><span>مسح</span></div>
+            <div class="btn" id="save-btn" style="background: var(--primary); color: #000;"><span>🖼️</span><span>صورة</span></div>
+            <div class="btn" id="record-btn" style="border-color: #ff4d4d;"><span>⏺️</span><span>فيديو</span></div>
+        </div>
+
+        <div class="slider-group">
+            <span>الشفافية:</span>
+            <input type="range" id="opacity-slider" min="0.1" max="1" step="0.05" value="0.5">
+        </div>
+
+        <div class="slider-group">
+            <span>التكبير:</span>
+            <input type="range" id="scale-slider" min="0.3" max="3" step="0.1" value="1">
+        </div>
+
+        <div class="slider-group">
+            <input type="color" id="color-picker" value="#00ff88">
+            <span>حجم القلم:</span>
+            <input type="range" id="brush-size" min="1" max="20" value="3">
+        </div>
+    </div>
+
+    <script>
+        // --- 1. إعدادات الكاميرا واللوحة ---
+        const startCameraBtn = document.getElementById('start-camera-btn');
+        const overlay = document.getElementById('permission-overlay');
+        const video = document.getElementById('camera-feed');
+        const uiPanel = document.getElementById('ui-panel');
+        const toggleUIBtn = document.getElementById('toggle-ui');
+        const canvas = document.getElementById('drawing-canvas');
+        const ctx = canvas.getContext('2d');
+
+        startCameraBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+                video.srcObject = stream;
+                overlay.style.display = 'none';
+                uiPanel.classList.remove('hidden');
+                toggleUIBtn.style.display = 'flex';
+                resizeCanvas();
+            } catch (err) {
+                alert("تم رفض الوصول للكاميرا! تأكد من إعطاء الصلاحية.");
+            }
+        });
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        // --- 2. نظام الرسم ---
+        let isDrawing = false, lastX = 0, lastY = 0, paths = [], currentPath = [];
+        const colorPicker = document.getElementById('color-picker');
+        const brushSize = document.getElementById('brush-size');
+
+        function getPos(e) { return e.touches ? [e.touches[0].clientX, e.touches[0].clientY] : [e.clientX, e.clientY]; }
+
+        function draw(e) {
+            if (!isDrawing) return; e.preventDefault(); const [x, y] = getPos(e);
+            ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(x, y);
+            ctx.strokeStyle = colorPicker.value; ctx.lineWidth = brushSize.value;
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+            currentPath.push({x, y}); [lastX, lastY] = [x, y];
+        }
+
+        canvas.addEventListener('touchstart', (e) => { isDrawing = true; const [x, y] = getPos(e); [lastX, lastY] = [x, y]; currentPath = [{x, y, color: colorPicker.value, size: brushSize.value}]; }, {passive: false});
+        canvas.addEventListener('touchmove', draw, {passive: false});
+        canvas.addEventListener('touchend', () => { if(isDrawing){ isDrawing = false; paths.push([...currentPath]); }});
+
+        canvas.addEventListener('mousedown', (e) => { isDrawing = true; const [x, y] = getPos(e); [lastX, lastY] = [x, y]; currentPath = [{x, y, color: colorPicker.value, size: brushSize.value}]; });
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', () => { if(isDrawing){ isDrawing = false; paths.push([...currentPath]); }});
+
+        document.getElementById('undo-btn').addEventListener('click', () => {
+            paths.pop(); ctx.clearRect(0, 0, canvas.width, canvas.height);
+            paths.forEach(path => {
+                ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
+                for(let i=1; i<path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+                ctx.strokeStyle = path[0].color; ctx.lineWidth = path[0].size;
+                ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+            });
+        });
+        document.getElementById('clear-btn').addEventListener('click', () => { paths = []; ctx.clearRect(0, 0, canvas.width, canvas.height); });
+
+        // --- 3. التحكم بالصورة ---
+        const imageUpload = document.getElementById('image-upload');
+        const imgContainer = document.getElementById('image-container');
+        const traceImage = document.getElementById('trace-image');
+        const opacitySlider = document.getElementById('opacity-slider');
+        const scaleSlider = document.getElementById('scale-slider');
+        const lockBtn = document.getElementById('lock-btn');
+        let isImageLocked = false, currentScale = 1, translateX = 0, translateY = 0;
+
+        imageUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    traceImage.src = event.target.result;
+                    imgContainer.style.display = 'block';
+                    currentScale = 1; translateX = 0; translateY = 0; scaleSlider.value = 1; updateTransform();
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        opacitySlider.addEventListener('input', (e) => traceImage.style.opacity = e.target.value);
+        scaleSlider.addEventListener('input', (e) => { currentScale = e.target.value; updateTransform(); });
+
+        let isDragging = false, startX, startY;
+        function dragStart(e) { if(isImageLocked) return; isDragging = true; startX = (e.touches ? e.touches[0].clientX : e.clientX) - translateX; startY = (e.touches ? e.touches[0].clientY : e.clientY) - translateY; }
+        function dragMove(e) { if (!isDragging || isImageLocked) return; e.preventDefault(); translateX = (e.touches ? e.touches[0].clientX : e.clientX) - startX; translateY = (e.touches ? e.touches[0].clientY : e.clientY) - startY; updateTransform(); }
+        function dragEnd() { isDragging = false; }
+
+        imgContainer.addEventListener('touchstart', dragStart, {passive: false});
+        imgContainer.addEventListener('touchmove', dragMove, {passive: false});
+        imgContainer.addEventListener('touchend', dragEnd);
+        imgContainer.addEventListener('mousedown', dragStart);
+        window.addEventListener('mousemove', dragMove);
+        window.addEventListener('mouseup', dragEnd);
+
+        function updateTransform() { imgContainer.style.transform = `translate(calc(-50% + ${translateX}px), calc(-50% + ${translateY}px)) scale(${currentScale})`; }
+
+        lockBtn.addEventListener('click', () => {
+            isImageLocked = !isImageLocked;
+            if(isImageLocked) { imgContainer.classList.add('locked'); lockBtn.classList.add('active-toggle'); lockBtn.innerHTML = '<span>🔒</span><span>مقفول</span>'; } 
+            else { imgContainer.classList.remove('locked'); lockBtn.classList.remove('active-toggle'); lockBtn.innerHTML = '<span>🔓</span><span>قفل</span>'; }
+        });
+
+        // --- 4. تسجيل الفيديو (Screen Recording) ---
+        const recordBtn = document.getElementById('record-btn');
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+        let recordAnimationId;
+        const recordCanvas = document.createElement('canvas'); // لوحة خفية لدمج الطبقات
+
+        function recordFrame() {
+            if(!isRecording) return;
+            const rCtx = recordCanvas.getContext('2d');
+            recordCanvas.width = canvas.width;
+            recordCanvas.height = canvas.height;
+
+            // 1. رسم فيديو الكاميرا
+            const vRatio = video.videoWidth / video.videoHeight;
+            const cRatio = recordCanvas.width / recordCanvas.height;
+            let drawWidth, drawHeight, sX, sY;
+            if(vRatio > cRatio) {
+                drawHeight = recordCanvas.height; drawWidth = drawHeight * vRatio;
+                sX = (recordCanvas.width - drawWidth) / 2; sY = 0;
+            } else {
+                drawWidth = recordCanvas.width; drawHeight = drawWidth / vRatio;
+                sX = 0; sY = (recordCanvas.height - drawHeight) / 2;
+            }
+            rCtx.drawImage(video, sX, sY, drawWidth, drawHeight);
+
+            // 2. رسم الصورة المرفوعة بشفافيتها وحجمها
+            if(imgContainer.style.display === 'block' && traceImage.src) {
+                rCtx.save();
+                rCtx.translate(recordCanvas.width/2 + translateX, recordCanvas.height/2 + translateY);
+                rCtx.scale(currentScale, currentScale);
+                rCtx.globalAlpha = opacitySlider.value;
+                const imgW = traceImage.clientWidth;
+                const imgH = traceImage.clientHeight;
+                rCtx.drawImage(traceImage, -imgW/2, -imgH/2, imgW, imgH);
+                rCtx.restore();
+            }
+
+            // 3. رسم الخطوط التي قمت برسمها
+            rCtx.drawImage(canvas, 0, 0);
+
+            // طلب الإطار التالي
+            recordAnimationId = requestAnimationFrame(recordFrame);
+        }
+
+        recordBtn.addEventListener('click', () => {
+            if(!isRecording) {
+                // بدء التسجيل
+                recordedChunks = [];
+                const stream = recordCanvas.captureStream(30); // 30 إطار في الثانية
+                
+                try {
+                    mediaRecorder = new MediaRecorder(stream);
+                } catch(e) {
+                    alert('متصفحك لا يدعم تسجيل الفيديو.');
+                    return;
+                }
+
+                mediaRecorder.ondataavailable = e => { if(e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'AR-Drawing-Video.webm';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                };
+
+                isRecording = true;
+                recordBtn.classList.add('recording');
+                recordBtn.innerHTML = '<span>⏹️</span><span>إيقاف</span>';
+                
+                // إخفاء الواجهة تلقائياً ليكون الفيديو نظيفاً
+                uiPanel.classList.add('hidden');
+                toggleUIBtn.innerText = '⬆';
+                uiVisible = false;
+
+                recordFrame();
+                mediaRecorder.start();
+            } else {
+                // إيقاف التسجيل
+                isRecording = false;
+                mediaRecorder.stop();
+                cancelAnimationFrame(recordAnimationId);
+                recordBtn.classList.remove('recording');
+                recordBtn.innerHTML = '<span>⏺️</span><span>فيديو</span>';
+            }
+        });
+
+        // --- 5. حفظ وحركات الواجهة ---
+        document.getElementById('save-btn').addEventListener('click', () => {
+            const link = document.createElement('a'); link.download = 'My-AR-Drawing.png'; link.href = canvas.toDataURL(); link.click();
+        });
+
+        let uiVisible = true;
+        toggleUIBtn.addEventListener('click', () => {
+            uiVisible = !uiVisible;
+            if(uiVisible) { uiPanel.classList.remove('hidden'); toggleUIBtn.innerText = '⬇'; } 
+            else { uiPanel.classList.add('hidden'); toggleUIBtn.innerText = '⬆'; }
+        });
+    </script>
+</body>
+</html>
