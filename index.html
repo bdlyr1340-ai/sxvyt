@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#05070d" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>AR Trace Pro — Xiaomi 14T Pro</title>
+  <title>AR Trace Pro — Xiaomi 14T Pro Clean Export</title>
   <style>
     :root{
       --bg:#05070d;
@@ -200,7 +200,7 @@
 
       <div class="tab-page" id="exportTab">
         <div class="card">
-          <div class="card-title">التصدير والتسجيل <span class="mini">الواجهة تختفي أثناء التسجيل</span></div>
+          <div class="card-title">التصدير والتسجيل <span class="mini">تسجيل نظيف بدون صورة التتبع افتراضياً</span></div>
           <div class="grid2">
             <button class="chip primary" id="saveCompositeBtn">حفظ صورة كاملة</button>
             <button class="chip" id="saveDrawingBtn">حفظ الرسم فقط</button>
@@ -212,10 +212,10 @@
           <div class="control"><label>FPS التسجيل</label><input id="recordFps" type="range" min="24" max="60" step="6" value="60"><span class="value" id="recordFpsVal">60</span></div>
           <div class="control"><label>Bitrate</label><input id="bitrateSlider" type="range" min="4" max="30" step="1" value="18"><span class="value" id="bitrateVal">18M</span></div>
           <div class="grid2">
-            <button class="chip active" id="includeTraceBtn">تصدير مع الصورة</button>
+            <button class="chip" id="includeTraceBtn">تصدير بدون صورة التتبع</button>
             <button class="chip active" id="hideUiDuringRecordBtn">إخفاء الواجهة</button>
           </div>
-          <p class="mini" id="mimeText" style="line-height:1.8;margin:10px 2px 0">صيغة التسجيل تختار تلقائياً حسب دعم المتصفح.</p>
+          <p class="mini" id="mimeText" style="line-height:1.8;margin:10px 2px 0">الوضع الافتراضي: الفيديو والصور المحفوظة لا تحتوي على صورة التتبع المرفوعة من المعرض، وتظهر فقط على الشاشة لتساعدك بالرسم.</p>
         </div>
       </div>
     </section>
@@ -267,7 +267,7 @@
     strokes:[], redo:[], activePointers:new Map(), dragStart:null, pinchStart:null,
     image:{loaded:false, visible:true, locked:false, x:0, y:0, scale:1, rotation:0, opacity:.45, contrast:100, brightness:100, lineArt:false},
     brush:{color:'#40f99b', size:5, smooth:.35, alpha:1},
-    includeTrace:true, hideUiDuringRecord:true, recording:false, recorder:null, recordChunks:[], recordCanvas:null, recordCtx:null, recordRAF:0, recordStart:0,
+    includeTrace:false, hideUiDuringRecord:true, recording:false, recorder:null, recordChunks:[], recordCanvas:null, recordCtx:null, recordRAF:0, recordStart:0,
     fps:{last:performance.now(), frames:0, shown:0}, mirrored:false, torch:false
   };
 
@@ -614,6 +614,7 @@
   }
 
   function drawTraceTo(octx, outW, outH){
+    // مهم: صورة التتبع لا تدخل في التصدير أو التسجيل إلا إذا فعّل المستخدم زر "تصدير مع صورة التتبع".
     if(!state.includeTrace || !state.image.loaded || !state.image.visible || !traceImage.complete) return;
     const im = state.image;
     const rectW = traceImage.naturalWidth, rectH = traceImage.naturalHeight;
@@ -715,7 +716,7 @@
     document.body.classList.add('recording');
     $('recordBtn').textContent = 'إيقاف التسجيل'; $('recordBtn').classList.add('active');
     if(state.hideUiDuringRecord) panel.classList.remove('open');
-    $('mimeText').textContent = `التسجيل الآن: ${mimeType || 'صيغة افتراضية'} / ${fps}fps / ${$('bitrateSlider').value}Mbps`;
+    $('mimeText').textContent = `التسجيل الآن: ${mimeType || 'صيغة افتراضية'} / ${fps}fps / ${$('bitrateSlider').value}Mbps / ${state.includeTrace ? 'مع صورة التتبع' : 'بدون صورة التتبع'}`;
     state.recorder.start(700);
     recordFrame();
   }
@@ -794,7 +795,12 @@
     $('recordBtn').addEventListener('click', toggleRecord);
     $('recordFps').addEventListener('input', e=>$('recordFpsVal').textContent=e.target.value);
     $('bitrateSlider').addEventListener('input', e=>$('bitrateVal').textContent=e.target.value+'M');
-    $('includeTraceBtn').addEventListener('click',()=>{ state.includeTrace=!state.includeTrace; $('includeTraceBtn').classList.toggle('active',state.includeTrace); });
+    $('includeTraceBtn').addEventListener('click',()=>{
+      state.includeTrace=!state.includeTrace;
+      $('includeTraceBtn').classList.toggle('active',state.includeTrace);
+      $('includeTraceBtn').textContent = state.includeTrace ? 'تصدير مع صورة التتبع' : 'تصدير بدون صورة التتبع';
+      toast(state.includeTrace ? 'تنبيه: صورة التتبع ستظهر في الحفظ/التسجيل' : 'تم تفعيل التصدير النظيف بدون صورة التتبع');
+    });
     $('hideUiDuringRecordBtn').addEventListener('click',()=>{ state.hideUiDuringRecord=!state.hideUiDuringRecord; $('hideUiDuringRecordBtn').classList.toggle('active',state.hideUiDuringRecord); });
     canvas.addEventListener('pointerdown', onPointerDown, {passive:false});
     canvas.addEventListener('pointermove', onPointerMove, {passive:false});
@@ -824,7 +830,7 @@
   }
 
   bind(); resizeCanvas(); updateTrace(); registerPWA(); requestAnimationFrame(animationTick);
-  $('mimeText').textContent = `صيغة التسجيل المتوقعة: ${pickMime() || 'سيختارها المتصفح تلقائياً'}`;
+  $('mimeText').textContent = `الوضع الافتراضي نظيف: لن تظهر صورة التتبع في الفيديو أو الحفظ. صيغة التسجيل المتوقعة: ${pickMime() || 'سيختارها المتصفح تلقائياً'}`;
 })();
 </script>
 </body>
