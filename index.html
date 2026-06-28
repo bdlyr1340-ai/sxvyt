@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#05070d" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>AR Trace Pro v4 — Clean Camera Export</title>
+  <title>AR Trace Pro v5 — CapCut + Speed</title>
   <style>
     :root{
       --bg:#05070d;--panel:rgba(10,14,24,.74);--panel2:rgba(10,14,24,.94);--line:rgba(255,255,255,.16);--line2:rgba(255,255,255,.26);
@@ -46,7 +46,7 @@
     </div>
   </div>
   <div class="topbar">
-    <div class="brand"><span class="dot"></span><b>AR Trace Pro v4</b><span>تسجيل نظيف</span></div>
+    <div class="brand"><span class="dot"></span><b>AR Trace Pro v5</b><span>نظيف + سرعة</span></div>
     <div class="hud">
       <div class="pill"><span class="rec-dot"></span><span id="recTime">00:00</span></div>
       <div class="pill" id="qualityHud">1080/60</div>
@@ -121,19 +121,21 @@
       </div>
       <div class="page" id="exportTab">
         <div class="card clean-warning">
-          <div class="card-title">تسجيل فيديو نظيف <span class="mini">بدون الصورة المرجعية 100%</span></div>
+          <div class="card-title">تسجيل فيديو نظيف <span class="mini">CapCut + سرعة</span></div>
           <div class="grid2">
             <button class="chip danger" id="recordBtn2">بدء/إيقاف التسجيل</button>
             <button class="chip primary" id="cleanShotBtn">حفظ لقطة نظيفة</button>
           </div>
+          <div class="control"><label>سرعة الفيديو</label><select id="speedSelect"><option value="1">عادي 1x</option><option value="1.5">سريع 1.5x</option><option value="2">سريع 2x</option><option value="3">سريع 3x</option><option value="4">سريع 4x</option><option value="6">تايم لابس 6x</option><option value="8">تايم لابس 8x</option></select><span class="value" id="speedVal">1x</span></div>
           <div class="control"><label>FPS</label><input id="fpsSlider" type="range" min="24" max="60" step="6" value="60"><span class="value" id="fpsVal">60</span></div>
-          <div class="control"><label>Bitrate</label><input id="bitrateSlider" type="range" min="5" max="35" step="1" value="20"><span class="value" id="bitrateVal">20M</span></div>
+          <div class="control"><label>Bitrate</label><input id="bitrateSlider" type="range" min="5" max="35" step="1" value="18"><span class="value" id="bitrateVal">18M</span></div>
           <div class="control"><label>الدقة</label><select id="recordSize"><option value="1080x1920">1080×1920 عمودي</option><option value="1440x2560">1440×2560 عالي</option><option value="screen">نفس الشاشة</option></select><span class="value">Clean</span></div>
+          <div class="control"><label>الصيغة</label><select id="formatSelect"><option value="capcut">CapCut متوافق</option><option value="mp4">MP4 إذا مدعوم</option><option value="webm-vp8">WebM VP8</option><option value="webm">WebM تلقائي</option></select><span class="value" id="formatVal">Auto</span></div>
           <div class="grid2">
             <button class="chip active" id="hideUiBtn">إخفاء اللوحة أثناء التسجيل</button>
             <button class="chip" id="guideBtn">دائرة/مركز</button>
           </div>
-          <p class="mini" id="recordInfo" style="margin:10px 2px 0;line-height:1.9">هذا الإصدار يسجل من الكاميرا فقط. لا يوجد زر لإدخال صورة التتبع داخل الفيديو، حتى لو بقيت ظاهرة على الشاشة.</p>
+          <p class="mini" id="recordInfo" style="margin:10px 2px 0;line-height:1.9">هذا الإصدار يسجل الكاميرا فقط، والصورة الشفافة تبقى للمعاينة ولا تدخل بالفيديو. وضع CapCut يتجنب VP9 ويحاول MP4 أولاً، وإذا المتصفح ما يدعم MP4 يستخدم WebM VP8.</p>
         </div>
       </div>
     </section>
@@ -159,7 +161,7 @@
   const grid = $('grid'), centerGuide = $('centerGuide'), imageUpload = $('imageUpload');
   const state = {
     quality:'pro', stream:null, track:null, caps:{}, devices:[], mirrored:false, torch:false, hideUi:true,
-    cssW:innerWidth, cssH:innerHeight, dpr:Math.min(devicePixelRatio||1,3), recording:false, recorder:null, chunks:[], recCanvas:null, recCtx:null, recRAF:0, recStart:0,
+    cssW:innerWidth, cssH:innerHeight, dpr:Math.min(devicePixelRatio||1,3), recording:false, processing:false, recorder:null, chunks:[], recCanvas:null, recCtx:null, recRAF:0, recStart:0, recMime:"", recBitrate:0, recFps:30,
     img:{loaded:false, visible:true, locked:false, x:0, y:0, scale:1, rotation:0, opacity:.45, contrast:100, brightness:100, line:false},
     pointers:new Map(), dragStart:null, pinchStart:null, fps:{last:performance.now(), frames:0, shown:0}
   };
@@ -205,12 +207,39 @@
   function drawVideoCover(ctx,outW,outH){const vw=video.videoWidth,vh=video.videoHeight;if(!vw||!vh){ctx.fillStyle='#000';ctx.fillRect(0,0,outW,outH);return}const vr=vw/vh,cr=outW/outH;let dw,dh,dx,dy;if(vr>cr){dh=outH;dw=dh*vr;dx=(outW-dw)/2;dy=0}else{dw=outW;dh=dw/vr;dx=0;dy=(outH-dh)/2}ctx.fillStyle='#000';ctx.fillRect(0,0,outW,outH);if(state.mirrored){ctx.save();ctx.translate(outW,0);ctx.scale(-1,1);ctx.drawImage(video,dx,dy,dw,dh);ctx.restore()}else ctx.drawImage(video,dx,dy,dw,dh)}
   function makeCleanCanvas(){let w,h;const val=$('recordSize').value;if(val==='screen'){w=Math.round(state.cssW*Math.min(state.dpr,2));h=Math.round(state.cssH*Math.min(state.dpr,2))}else{[w,h]=val.split('x').map(Number)}const c=document.createElement('canvas');c.width=w;c.height=h;drawVideoCover(c.getContext('2d',{alpha:false}),w,h);return c}
   function downloadCanvas(c,name,type='image/jpeg',quality=.94){c.toBlob(blob=>{if(!blob){toast('تعذر إنشاء الملف');return}const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1600)},type,quality)}
-  function pickMime(){if(!window.MediaRecorder)return'';const list=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4;codecs=avc1.42E01E','video/mp4'];return list.find(t=>MediaRecorder.isTypeSupported(t))||''}
+  function pickMime(mode){
+    if(!window.MediaRecorder)return'';
+    const mp4=['video/mp4;codecs="avc1.42E01E"','video/mp4;codecs=avc1.42E01E','video/mp4;codecs=h264','video/mp4'];
+    const vp8=['video/webm;codecs=vp8','video/webm;codecs="vp8"'];
+    const auto=['video/webm;codecs=vp8','video/webm','video/webm;codecs=vp9'];
+    const list=mode==='mp4'?mp4.concat(vp8):mode==='webm-vp8'?vp8.concat(['video/webm']):mode==='webm'?auto:mp4.concat(vp8,['video/webm']);
+    const found=list.find(t=>MediaRecorder.isTypeSupported(t))||'';
+    return found;
+  }
+  function extFromType(type){return (type||'').toLowerCase().includes('mp4')?'mp4':'webm'}
+  function downloadBlob(blob,type,name){const ext=extFromType(type||blob.type);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`${name}-${Date.now()}.${ext}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2200)}
+  function drawElementCover(ctx,el,outW,outH){const vw=el.videoWidth||outW,vh=el.videoHeight||outH;const vr=vw/vh,cr=outW/outH;let dw,dh,dx,dy;if(vr>cr){dh=outH;dw=dh*vr;dx=(outW-dw)/2;dy=0}else{dw=outW;dh=dw/vr;dx=0;dy=(outH-dh)/2}ctx.fillStyle='#000';ctx.fillRect(0,0,outW,outH);ctx.drawImage(el,dx,dy,dw,dh)}
+  function waitEvent(target,ok,err,timeout=12000){return new Promise((res,rej)=>{let done=false;const clean=()=>{clearTimeout(to);target.removeEventListener(ok,onOk);if(err)target.removeEventListener(err,onErr)};const onOk=()=>{if(done)return;done=true;clean();res()};const onErr=()=>{if(done)return;done=true;clean();rej(new Error(err||'error'))};const to=setTimeout(()=>{if(done)return;done=true;clean();rej(new Error('timeout'))},timeout);target.addEventListener(ok,onOk,{once:true});if(err)target.addEventListener(err,onErr,{once:true})})}
+  async function speedUpBlob(blob,type,speed,fps,bitrate){
+    if(speed<=1)return blob;
+    state.processing=true;setRecButtons(false,true);toast(`معالجة السرعة ${speed}x... انتظر`,3500);$('recordInfo').textContent=`جاري تسريع الفيديو ${speed}x. الصورة المرجعية ما زالت خارج الفيديو.`;
+    const inUrl=URL.createObjectURL(blob);const v=document.createElement('video');v.src=inUrl;v.muted=true;v.playsInline=true;v.preload='auto';v.style.cssText='position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0';document.body.appendChild(v);
+    try{await waitEvent(v,'loadedmetadata','error',12000)}catch(e){URL.revokeObjectURL(inUrl);v.remove();state.processing=false;setRecButtons(false,false);throw e}
+    const c=document.createElement('canvas');c.width=state.recCanvas?.width||1080;c.height=state.recCanvas?.height||1920;const cx=c.getContext('2d',{alpha:false});
+    const mime=pickMime($('formatSelect').value)||type||'video/webm';const stream=c.captureStream(fps);const opts={videoBitsPerSecond:bitrate};if(mime)opts.mimeType=mime;
+    const chunks=[];let rec;try{rec=new MediaRecorder(stream,opts)}catch(e){URL.revokeObjectURL(inUrl);v.remove();state.processing=false;setRecButtons(false,false);throw e}
+    const done=new Promise(resolve=>{rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};rec.onstop=()=>resolve(new Blob(chunks,{type:rec.mimeType||mime||type}))});
+    let raf=0;function draw(){if(v.ended||v.paused&&v.currentTime>=v.duration)return;drawElementCover(cx,v,c.width,c.height);raf=requestAnimationFrame(draw)}
+    rec.start(500);v.playbackRate=speed;v.currentTime=0;await v.play();draw();
+    await new Promise(resolve=>{v.onended=resolve;setTimeout(resolve,Math.ceil((v.duration/speed+2)*1000))});
+    cancelAnimationFrame(raf);drawElementCover(cx,v,c.width,c.height);setTimeout(()=>{try{if(rec.state!=='inactive')rec.stop()}catch(e){}},160);
+    const out=await done;stream.getTracks().forEach(t=>t.stop());URL.revokeObjectURL(inUrl);v.remove();state.processing=false;setRecButtons(false,false);return out;
+  }
   function countdown(){return new Promise(res=>{const box=$('countdown'),sp=box.querySelector('span');let n=3;sp.textContent=n;box.classList.add('show');const ti=setInterval(()=>{n--;if(n<=0){clearInterval(ti);box.classList.remove('show');res()}else sp.textContent=n},650)})}
-  async function toggleRecord(){if(state.recording){stopRecord();return}if(!state.stream){toast('شغّل الكاميرا أولاً');return}if(!window.MediaRecorder){toast('المتصفح لا يدعم تسجيل الفيديو');return}await countdown();const fps=Number($('fpsSlider').value), bitrate=Number($('bitrateSlider').value)*1000000;state.recCanvas=makeCleanCanvas();state.recCtx=state.recCanvas.getContext('2d',{alpha:false});const stream=state.recCanvas.captureStream(fps);const mime=pickMime();const opts={videoBitsPerSecond:bitrate};if(mime)opts.mimeType=mime;try{state.recorder=new MediaRecorder(stream,opts)}catch(e){toast('تعذر بدء التسجيل بهذه الصيغة');return}state.chunks=[];state.recorder.ondataavailable=e=>{if(e.data&&e.data.size)state.chunks.push(e.data)};state.recorder.onstop=()=>{const type=state.recorder.mimeType||mime||'video/webm';const blob=new Blob(state.chunks,{type});const ext=type.includes('mp4')?'mp4':'webm';const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`Clean-Camera-Trace-${Date.now()}.${ext}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1600);state.chunks=[]};state.recording=true;state.recStart=performance.now();document.body.classList.add('recording');setRecButtons(true);if(state.hideUi)panel.classList.remove('open');$('recordInfo').textContent=`التسجيل الآن: كاميرا فقط / ${state.recCanvas.width}×${state.recCanvas.height} / ${fps}fps / ${$('bitrateSlider').value}Mbps. صورة التتبع غير داخلة بالفيديو.`;state.recorder.start(700);recordLoop()}
+  async function toggleRecord(){if(state.processing){toast('انتظر انتهاء معالجة الفيديو');return}if(state.recording){stopRecord();return}if(!state.stream){toast('شغّل الكاميرا أولاً');return}if(!window.MediaRecorder){toast('المتصفح لا يدعم تسجيل الفيديو');return}await countdown();const fps=Number($('fpsSlider').value), bitrate=Number($('bitrateSlider').value)*1000000;state.recFps=fps;state.recBitrate=bitrate;state.recCanvas=makeCleanCanvas();state.recCtx=state.recCanvas.getContext('2d',{alpha:false});const stream=state.recCanvas.captureStream(fps);const mime=pickMime($('formatSelect').value);state.recMime=mime;const opts={videoBitsPerSecond:bitrate};if(mime)opts.mimeType=mime;try{state.recorder=new MediaRecorder(stream,opts)}catch(e){toast('تعذر بدء التسجيل بهذه الصيغة. جرّب WebM VP8 من الصيغة.');return}state.chunks=[];state.recorder.ondataavailable=e=>{if(e.data&&e.data.size)state.chunks.push(e.data)};state.recorder.onstop=async()=>{const type=state.recorder.mimeType||state.recMime||'video/webm';const raw=new Blob(state.chunks,{type});const speed=Number($('speedSelect').value)||1;state.chunks=[];try{const finalBlob=await speedUpBlob(raw,type,speed,state.recFps,state.recBitrate);const finalType=finalBlob.type||type;downloadBlob(finalBlob,finalType,`Clean-Camera-${speed}x`);$('recordInfo').textContent=`تم حفظ الفيديو النظيف ${speed}x بصيغة ${extFromType(finalType).toUpperCase()}. لم تدخل صورة التتبع بالفيديو.`;toast('تم حفظ الفيديو النظيف')}catch(e){downloadBlob(raw,type,'Clean-Camera-normal');$('recordInfo').textContent='تعذرت معالجة السرعة، تم حفظ التسجيل العادي. جرّب سرعة أقل أو دقة 1080.';toast('تم حفظ التسجيل العادي')}};state.recording=true;state.recStart=performance.now();document.body.classList.add('recording');setRecButtons(true);if(state.hideUi)panel.classList.remove('open');$('recordInfo').textContent=`التسجيل الآن: كاميرا فقط / ${state.recCanvas.width}×${state.recCanvas.height} / ${fps}fps / ${$('bitrateSlider').value}Mbps / سرعة ${$('speedSelect').value}x / ${mime||'auto'}. صورة التتبع غير داخلة بالفيديو.`;state.recorder.start(700);recordLoop()}
   function recordLoop(){if(!state.recording||!state.recCtx)return;drawVideoCover(state.recCtx,state.recCanvas.width,state.recCanvas.height);state.recRAF=requestAnimationFrame(recordLoop)}
-  function stopRecord(){state.recording=false;cancelAnimationFrame(state.recRAF);try{if(state.recorder&&state.recorder.state!=='inactive')state.recorder.stop()}catch(e){}document.body.classList.remove('recording');setRecButtons(false);$('recTime').textContent='00:00';$('recordInfo').textContent='تم حفظ الفيديو النظيف. لم يتم إدخال صورة التتبع أو أي واجهة داخل الفيديو.';toast('تم حفظ الفيديو النظيف')}
-  function setRecButtons(on){$('recordBtn').classList.toggle('active',on);$('recordBtn2').classList.toggle('active',on);$('recordSide').classList.toggle('active',on);$('recordBtn').querySelector('span').textContent=on?'إيقاف':'تسجيل';$('recordBtn2').textContent=on?'إيقاف التسجيل':'بدء التسجيل';$('recordSide').textContent=on?'■':'●'}
+  function stopRecord(){state.recording=false;cancelAnimationFrame(state.recRAF);try{if(state.recorder&&state.recorder.state!=='inactive')state.recorder.stop()}catch(e){}document.body.classList.remove('recording');setRecButtons(false);$('recTime').textContent='00:00';$('recordInfo').textContent='تم إيقاف التسجيل. إذا اخترت سرعة أعلى من 1x قد تظهر معالجة قصيرة قبل التحميل.';toast('جاري تجهيز الفيديو')}
+  function setRecButtons(on,processing=false){$('recordBtn').classList.toggle('active',on||processing);$('recordBtn2').classList.toggle('active',on||processing);$('recordSide').classList.toggle('active',on||processing);$('recordBtn').disabled=processing;$('recordBtn2').disabled=processing;$('recordSide').disabled=processing;$('recordBtn').querySelector('span').textContent=processing?'معالجة':on?'إيقاف':'تسجيل';$('recordBtn2').textContent=processing?'جاري المعالجة':'إيقاف التسجيل';if(!on&&!processing)$('recordBtn2').textContent='بدء التسجيل';$('recordSide').textContent=processing?'…':on?'■':'●'}
   function toggleGrid(){const on=grid.style.display!=='block';grid.style.display=on?'block':'none';$('gridSide').classList.toggle('active',on)}
   function toggleGuide(){const on=centerGuide.style.display!=='block';centerGuide.style.display=on?'block':'none';$('guideBtn').classList.toggle('active',on)}
   function bind(){
@@ -221,7 +250,7 @@
     function toggleLock(){if(!state.img.loaded){toast('ارفع صورة أولاً');return}state.img.locked=!state.img.locked;updateTrace();toast(state.img.locked?'تم القفل — حرّك يدك وارسم بالواقع':'تم فتح التحريك')}
     $('lockBtn').addEventListener('click',toggleLock);$('lockSide').addEventListener('click',toggleLock);$('hideBtn').addEventListener('click',()=>{state.img.visible=!state.img.visible;updateTrace()});$('removeBtn').addEventListener('click',()=>{state.img.loaded=false;traceImage.removeAttribute('src');updateTrace();toast('تم حذف الصورة من الشاشة')});
     $('opacitySlider').addEventListener('input',e=>{state.img.opacity=Number(e.target.value);updateTrace()});$('scaleSlider').addEventListener('input',e=>{state.img.scale=Number(e.target.value);updateTrace()});$('rotateSlider').addEventListener('input',e=>{state.img.rotation=Number(e.target.value);updateTrace()});$('contrastSlider').addEventListener('input',e=>{state.img.contrast=Number(e.target.value);updateTrace()});$('brightnessSlider').addEventListener('input',e=>{state.img.brightness=Number(e.target.value);updateTrace()});$('centerBtn').addEventListener('click',()=>{Object.assign(state.img,{x:0,y:0,scale:1,rotation:0});$('scaleSlider').value=1;$('rotateSlider').value=0;updateTrace()});$('lineBtn').addEventListener('click',()=>{state.img.line=!state.img.line;updateTrace();$('lineBtn').classList.toggle('active',state.img.line)});
-    $('recordBtn').addEventListener('click',toggleRecord);$('recordBtn2').addEventListener('click',toggleRecord);$('recordSide').addEventListener('click',toggleRecord);$('shotBtn').addEventListener('click',()=>downloadCanvas(makeCleanCanvas(),`Clean-Camera-${Date.now()}.jpg`));$('cleanShotBtn').addEventListener('click',()=>downloadCanvas(makeCleanCanvas(),`Clean-Camera-${Date.now()}.jpg`));$('fpsSlider').addEventListener('input',e=>$('fpsVal').textContent=e.target.value);$('bitrateSlider').addEventListener('input',e=>$('bitrateVal').textContent=e.target.value+'M');$('hideUiBtn').addEventListener('click',()=>{state.hideUi=!state.hideUi;$('hideUiBtn').classList.toggle('active',state.hideUi)});$('gridSide').addEventListener('click',toggleGrid);$('guideBtn').addEventListener('click',toggleGuide);
+    $('recordBtn').addEventListener('click',toggleRecord);$('recordBtn2').addEventListener('click',toggleRecord);$('recordSide').addEventListener('click',toggleRecord);$('shotBtn').addEventListener('click',()=>downloadCanvas(makeCleanCanvas(),`Clean-Camera-${Date.now()}.jpg`));$('cleanShotBtn').addEventListener('click',()=>downloadCanvas(makeCleanCanvas(),`Clean-Camera-${Date.now()}.jpg`));$('fpsSlider').addEventListener('input',e=>$('fpsVal').textContent=e.target.value);$('bitrateSlider').addEventListener('input',e=>$('bitrateVal').textContent=e.target.value+'M');$('speedSelect').addEventListener('change',e=>$('speedVal').textContent=e.target.value+'x');$('formatSelect').addEventListener('change',e=>{$('formatVal').textContent=e.target.value==='capcut'?'CapCut':e.target.value.toUpperCase()});$('hideUiBtn').addEventListener('click',()=>{state.hideUi=!state.hideUi;$('hideUiBtn').classList.toggle('active',state.hideUi)});$('gridSide').addEventListener('click',toggleGrid);$('guideBtn').addEventListener('click',toggleGuide);
     document.addEventListener('visibilitychange',()=>{if(document.hidden&&state.recording)stopRecord()});
   }
   bind();setQuality('pro');updateTrace();
